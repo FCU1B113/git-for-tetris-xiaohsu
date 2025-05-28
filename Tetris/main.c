@@ -445,8 +445,8 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
             state->linesCleared += cleared;
 
 
-            // 更新等級（每 3 行升 1 級）
-            state->level = state->linesCleared / 3;
+            // 更新等級
+            state->level = state->score / 500;
 
             // 初始化新方塊
             state->x = CANVAS_WIDTH / 2;
