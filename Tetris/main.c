@@ -63,6 +63,7 @@ typedef enum
     CYAN,
     WHITE,
     BLACK = 0,
+    GHOST = 47,
 } Color;
 
 typedef enum
@@ -93,6 +94,8 @@ typedef struct
     int bestScore;
     int rotate;
     int fallTime;
+    int linesCleared;
+    int level;
     ShapeId queue[4];
 } State;
 
@@ -252,17 +255,18 @@ void printCanvas(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
         }
         printf("\033[0m|\n");
     }
-    printf("\033[%d;%dHScore: %d", 2, CANVAS_WIDTH * 2 + 5, state->score);
+    printf("\033[%d;%dHLevel: %d", 2, CANVAS_WIDTH * 2 + 5, state->level);
+    printf("\033[%d;%dHScore: %d", 4, CANVAS_WIDTH * 2 + 5, state->score);
 
     // 輸出Next:
-    printf("\033[%d;%dHNext:", 4, CANVAS_WIDTH * 2 + 5);
+    printf("\033[%d;%dHNext:", 6, CANVAS_WIDTH * 2 + 5);
     // 輸出有甚麼方塊
     for (int i = 1; i <= 3; i++)
     {
         Shape shapeData = shapes[state->queue[i]];
         for (int j = 0; j < 4; j++)
         {
-            printf("\033[%d;%dH", i * 4 + j, CANVAS_WIDTH * 2 + 15);
+            printf("\033[%d;%dH", i * 6 + j, CANVAS_WIDTH * 2 + 15);
             for (int k = 0; k < 4; k++)
             {
                 if (j < shapeData.size && k < shapeData.size && shapeData.rotates[0][j][k])
@@ -276,7 +280,10 @@ void printCanvas(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
             }
         }
     }
+    
     return;
+    
+
 }
 
 bool move(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], int originalX, int originalY, int originalRotate, int newX, int newY, int newRotate, ShapeId shapeId)
@@ -373,6 +380,13 @@ int clearLine(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH])
     return linesCleared;
 }
 
+int getFallDelay(int level)
+{
+    int delay = FALL_DELAY - level * 40;
+    if (delay < 100) delay = 100; // 最快100ms
+    return delay;
+}
+
 
 void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
 {
@@ -400,26 +414,41 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
     }
     else if (DOWN_FUNC())
     {
-        state->fallTime = FALL_DELAY;
+        state->fallTime = getFallDelay(state->level);
     }
     else if (FALL_FUNC())
     {
-        state->fallTime += FALL_DELAY * CANVAS_HEIGHT;
+        state->fallTime += getFallDelay(state->level) * CANVAS_HEIGHT;
     }
 
     state->fallTime += RENDER_DELAY;
 
-    while (state->fallTime >= FALL_DELAY)
+    // 動態下落間隔：依據等級調整
+    int fallDelay = getFallDelay(state->level);
+
+    while (state->fallTime >= fallDelay)
     {
-        state->fallTime -= FALL_DELAY;
+        state->fallTime -= fallDelay;
         if (move(canvas, state->x, state->y, state->rotate, state->x, state->y + 1, state->rotate, state->queue[0]))
         {
             state->y++;
         }
         else
         {
-            state->score += clearLine(canvas);
+            int cleared = clearLine(canvas);
+            switch (cleared) {
+            case 1: state->score += 100; break;
+            case 2: state->score += 300; break;
+            case 3: state->score += 500; break;
+            case 4: state->score += 800; break;
+            }
+            state->linesCleared += cleared;
 
+
+            // 更新等級（每 3 行升 1 級）
+            state->level = state->linesCleared / 3;
+
+            // 初始化新方塊
             state->x = CANVAS_WIDTH / 2;
             state->y = 0;
             state->rotate = 0;
@@ -429,7 +458,7 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
             state->queue[2] = state->queue[3];
             state->queue[3] = rand() % 7;
 
-            //結束輸出
+            // 結束判定
             if (!move(canvas, state->x, state->y, state->rotate, state->x, state->y, state->rotate, state->queue[0]))
             {
                 if (state->score > state->bestScore)
@@ -438,13 +467,13 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
                     FILE* file = fopen("score.txt", "w");
                     if (file)
                     {
-                        fprintf(file, "%d", state->bestScore);  // 用文字格式寫入整數
+                        fprintf(file, "%d", state->bestScore);
                         fclose(file);
                     }
                 }
 
-                printf("\033[%d;%dH\x1b[41m GAME OVER!!! PRESS ENTER TO EXIT THE GAME \x1b[0m\033[%d;%dH", CANVAS_HEIGHT - 3, CANVAS_WIDTH * 2 + 5, CANVAS_HEIGHT + 5, 0);
-                printf("\033[%d;%dHBest Score: %d", 18, CANVAS_WIDTH * 2 + 5, state->bestScore);
+                printf("\033[%d;%dH\x1b[41m GAME OVER!!! PRESS ENTER TO EXIT THE GAME \x1b[0m\033[%d;%dH", 21, CANVAS_WIDTH * 2 + 5, CANVAS_HEIGHT + 5, 0);
+                printf("\033[%d;%dHBest Score: %d", 22, CANVAS_WIDTH * 2 + 5, state->bestScore);
                 int ch;
                 do {
                     ch = _getch();
@@ -456,6 +485,7 @@ void logic(Block canvas[CANVAS_HEIGHT][CANVAS_WIDTH], State* state)
     return;
 }
 
+
 int main()
 {
     srand(time(NULL));
@@ -466,7 +496,9 @@ int main()
         .y = 0,
         .score = 0,
         .rotate = 0,
-        .fallTime = 0 };
+        .fallTime = 0,
+        .linesCleared = 0,
+        .level = 0};
 
     for (int i = 0; i < 4; i++)
     {
